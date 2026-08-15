@@ -10,10 +10,10 @@ WidgetMetadata = {
   globalParams: [
       { name: "serverName", title: "🏷️ 源1 名称", type: "input", value: "主节点", description: "例如：我的专属节点" },
       { name: "server", title: "🔗 源1 链接", type: "input", value: "https://api.dandanplay.net" },
-      { name: "serverName2", title: "🏷️ 源2 名称", type: "input" },
-      { name: "server2", title: "🔗 源2 链接", type: "input" },
-      { name: "serverName3", title: "🏷️ 源3 名称", type: "input" },
-      { name: "server3", title: "🔗 源3 链接", type: "input" },
+      { name: "serverName2", title: "🏷️ 源2 名称", type: "夏天" },
+      { name: "server2", title: "🔗 源2 链接", type: "https://dm.wodenas.xin/xiatianembydmkk" },
+      { name: "serverName3", title: "🏷️ 源3 名称", type: "炊烟袅袅" },
+      { name: "server3", title: "🔗 源3 链接", type: "https://danmu.cynn.top/cynnsq" },
       { 
           name: "maxCount", 
           title: "📊 弹幕数量上限", 
