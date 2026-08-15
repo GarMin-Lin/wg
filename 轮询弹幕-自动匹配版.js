@@ -5,7 +5,7 @@ WidgetMetadata = {
   requiredVersion: "0.0.2",
   site: "https://t.me/MakkaPakkaOvO",
   description: "并发搜索多API、自定义名称、繁简互转、数量限制、关键词屏蔽、颜色重写（轮询稳定版本，适合单源）",
-  author: "𝙈𝙖𝙠𝙠𝙖𝙋𝙖𝙠𝙠𝙖",
+  author: "𝙈𝙖𝙠𝙠𝙖𝙋𝙖𝙠𝙠𝙖&wg",
   
   globalParams: [
       { name: "serverName", title: "🏷️ 源1 名称", type: "input", value: "主节点", description: "例如：我的专属节点" },
