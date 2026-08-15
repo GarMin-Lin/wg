@@ -52,6 +52,17 @@ WidgetMetadata = {
           ]
       },
       { 
+          name: "matchMode", 
+          title: "🎯 匹配模式", 
+          type: "enumeration", 
+          value: "smart",
+          enumOptions: [
+              { title: "智能（播放自动匹配，搜索全量）", value: "smart" },
+              { title: "总是自动匹配（只显示最优一条）", value: "auto" },
+              { title: "总是全量候选（上游官方行为）", value: "list" }
+          ]
+      },
+      { 
           name: "blockKeywords", 
           title: "🚫 弹幕内容屏蔽词 (逗号分隔)", 
           type: "input", 
@@ -292,27 +303,28 @@ async function buildAutoMatchList(source, params, shouldBindSource) {
   }];
 }
 
-function filterAnimes(rawAnimes, type, season, queryTitle) {
-  const movieTypes = ["movie", "电影", "奇幻片", "剧场版"];
-  let animes = [];
-  if (rawAnimes && rawAnimes.length > 0) {
-    animes = rawAnimes.filter((anime) => {
-      const animeType = (anime.type || "").toLowerCase();
-      if (type === "movie") return movieTypes.some(t => t.toLowerCase() === animeType);
-      if (type === "tv") return !movieTypes.some(t => t.toLowerCase() === animeType);
-      return true;
-    });
-    if (season) {
-      const seasonNum = Number(season);
-      const matchedAnimes = animes.filter((anime) => {
-        if (!anime.animeTitle.includes(queryTitle)) return false;
-        const animeSeason = extractSeasonNumber(anime.animeTitle);
-        return animeSeason !== null && animeSeason === seasonNum;
-      });
-      if (matchedAnimes.length > 0) animes = matchedAnimes;
-    }
-  }
-  return animes;
+// 手动搜索排序（对齐上游 danmu_api forward-widget 的 searchDanmuCore）：只排序、不删减，保证"返回全部内容"
+// - 有 season：标题含关键词且季数匹配的候选置顶（排除电影/剧场版），其余保留在后
+// - 无 season：电影/剧场版置顶（用户搜剧名时常想看剧场版），其余保留在后
+function sortAnimesForDisplay(rawAnimes, season, queryTitle) {
+  if (!Array.isArray(rawAnimes) || rawAnimes.length === 0) return [];
+  const isMovieLike = (anime) => {
+    const t = String((anime && anime.animeTitle) || "").toLowerCase();
+    return t.includes("电影") || t.includes("movie");
+  };
+  const seasonNum = Number(season);
+  const hasSeason = !Number.isNaN(seasonNum) && seasonNum > 0;
+  const matched = [];
+  const rest = [];
+  rawAnimes.forEach((anime) => {
+    const inMatched = hasSeason
+      ? (anime.animeTitle && anime.animeTitle.includes(queryTitle) && !isMovieLike(anime)
+         && extractSeasonNumber(anime.animeTitle) === seasonNum)
+      : isMovieLike(anime);
+    if (inMatched) matched.push(anime);
+    else rest.push(anime);
+  });
+  return [...matched, ...rest];
 }
 
 function convertChineseNumber(chineseNumber) {
@@ -343,22 +355,27 @@ function convertChineseNumber(chineseNumber) {
 // ==========================================
 
 async function searchDanmu(params) {
-  const { type, title, season, searchBlockKeywords } = params;
+  const { season, searchBlockKeywords, matchMode } = params;
   // 手动搜索场景 App 可能只传 seriesName（stage1 参数含 title/seriesName），两者都兜底
-  let queryTitle = title || params.seriesName;
-  
+  let queryTitle = params.title || params.seriesName;
+
   const sources = getMergedDanmuSources(params);
   const shouldBindSource = shouldShowDanmuSource(sources);
 
-  // 【自动匹配优先】播放场景判定（ForwardWidgets 规范：stage1 参数为 title/seriesName/season/type/tmdbId）
-  // 播放时 App 会从文件名解析出 episode/tmdbId/season+type 等结构化字段；
-  // 用户主动搜索通常只传关键词（title/seriesName），不带季/集/ID → 用这些强信号区分，避免手动搜索误走自动匹配
+  // 【播放/搜索分流】依据上游 danmu_api 源码复核结论：
+  //   - /api/v2/match（matchAnime）服务端只返回一条最优匹配（matches 恒为单元素数组）→ 用于"播放时只显示自动匹配"
+  //   - /api/v2/search/anime（searchAnime）返回全量候选（聚合所有源、支持季/集过滤）→ 用于"手动搜索时显示全部内容"
+  //   - 上游官方模块 forward-widget.js 只用 search/anime 返回全量；上游测试 commonParams 显示 App 调用时
+  //     season/type 播放与搜索都会带，只有 episode（正在播第几集）与 tmdbId（详情页解析）是播放独有强信号。
+  //   - 因此移除此前的 (season && type) 信号（它正是手动搜索被误判走自动匹配的元凶）。
+  //   另提供 matchMode 总开关兜底：smart=智能判定 / auto=总是自动匹配 / list=总是全量候选。
   const hasEpisode = /(\d+)/.test(String(params.episode === undefined || params.episode === null ? "" : params.episode));
-  const isPlaybackScene = Boolean(
-    (hasEpisode || params.tmdbId || (params.season && params.type))
+  const smartPlayback = Boolean(
+    (hasEpisode || params.tmdbId)
     && (params.title || params.seriesName)
   );
-  if (isPlaybackScene) {
+  const wantAutoMatch = matchMode === "auto" || (matchMode !== "list" && smartPlayback);
+  if (wantAutoMatch) {
     // 收集【所有源】的自动匹配结果，每个源最多一条，带源名后缀便于对比
     // 用并发批次（而非串行）加速：多个源同时发 /api/v2/match，避免播放时等待过久
     const autoResults = [];
@@ -375,7 +392,7 @@ async function searchDanmu(params) {
     if (autoResults.length > 0) return { animes: autoResults };
     // 全部源自动匹配失败 → 降级走下方候选列表，给用户手动选择机会
   }
-  
+
   const results = await mapDanmuSourcesInBatches(sources, DANMU_SOURCE_BATCH_SIZE, async (source) => {
     try {
       const response = await Widget.http.get(
@@ -414,7 +431,8 @@ async function searchDanmu(params) {
 
       return {
         source,
-        animes: filterAnimes(rawAnimes, type, season, queryTitle),
+        // 手动搜索返回【全部】候选（只排序不删减，与上游官方行为一致）：有 season 时匹配季置顶，否则电影/剧场版置顶
+        animes: sortAnimesForDisplay(rawAnimes, season, queryTitle),
       };
     } catch (error) {
       console.error(`请求 ${source.server} 失败:`, error);
