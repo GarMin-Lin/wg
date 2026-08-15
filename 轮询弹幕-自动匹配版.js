@@ -1,7 +1,7 @@
 WidgetMetadata = {
   id: "danmu_api_Max_lunxun",
   title: "轮询弹幕",
-  version: "9.9.9", // 
+  version: "9.9.9",
   requiredVersion: "0.0.2",
   site: "https://t.me/MakkaPakkaOvO",
   description: "并发搜索多API、自定义名称、繁简互转、数量限制、关键词屏蔽、颜色重写（轮询稳定版本，适合单源）",
@@ -10,10 +10,10 @@ WidgetMetadata = {
   globalParams: [
       { name: "serverName", title: "🏷️ 源1 名称", type: "input", value: "主节点", description: "例如：我的专属节点" },
       { name: "server", title: "🔗 源1 链接", type: "input", value: "https://api.dandanplay.net" },
-      { name: "serverName2", title: "🏷️ 源2 名称", type: "夏天" },
-      { name: "server2", title: "🔗 源2 链接", type: "https://dm.wodenas.xin/xiatianembydmkk" },
-      { name: "serverName3", title: "🏷️ 源3 名称", type: "炊烟袅袅" },
-      { name: "server3", title: "🔗 源3 链接", type: "https://danmu.cynn.top/cynnsq" },
+      { name: "serverName2", title: "🏷️ 源2 名称", type: "input", value: "夏天" },
+      { name: "server2", title: "🔗 源2 链接", type: "input", value: "https://dm.wodenas.xin/xiatianembydmkk" },
+      { name: "serverName3", title: "🏷️ 源3 名称", type: "input", value: "炊烟袅袅" },
+      { name: "server3", title: "🔗 源3 链接", type: "input", value: "https://danmu.cynn.top/cynnsq" },
       { 
           name: "maxCount", 
           title: "📊 弹幕数量上限", 
@@ -344,7 +344,8 @@ function convertChineseNumber(chineseNumber) {
 
 async function searchDanmu(params) {
   const { type, title, season, searchBlockKeywords } = params;
-  let queryTitle = title;
+  // 手动搜索场景 App 可能只传 seriesName（stage1 参数含 title/seriesName），两者都兜底
+  let queryTitle = title || params.seriesName;
   
   const sources = getMergedDanmuSources(params);
   const shouldBindSource = shouldShowDanmuSource(sources);
@@ -359,17 +360,18 @@ async function searchDanmu(params) {
   );
   if (isPlaybackScene) {
     // 收集【所有源】的自动匹配结果，每个源最多一条，带源名后缀便于对比
+    // 用并发批次（而非串行）加速：多个源同时发 /api/v2/match，避免播放时等待过久
     const autoResults = [];
-    for (const source of sources) {
+    const autoLists = await mapDanmuSourcesInBatches(sources, DANMU_SOURCE_BATCH_SIZE, async (source) => {
       try {
         const autoList = await buildAutoMatchList(source, params, shouldBindSource);
-        if (autoList && autoList.length > 0) {
-          autoResults.push(...autoList);
-        }
+        return Array.isArray(autoList) ? autoList : [];
       } catch (error) {
         console.error(`自动匹配 ${source.server} 失败:`, error);
+        return [];
       }
-    }
+    });
+    for (const list of autoLists) autoResults.push(...list);
     if (autoResults.length > 0) return { animes: autoResults };
     // 全部源自动匹配失败 → 降级走下方候选列表，给用户手动选择机会
   }
@@ -633,8 +635,8 @@ async function getCommentsById(params) {
                   });
               }
 
-              let limit = parseInt(maxCount);
-              if (!isNaN(limit) && limit > 0 && list.length > limit) {
+              let limit = Number(maxCount);
+              if (!Number.isNaN(limit) && limit > 0 && list.length > limit) {
                   for (let i = list.length - 1; i > 0; i--) {
                       const j = Math.floor(Math.random() * (i + 1));
                       [list[i], list[j]] = [list[j], list[i]];
@@ -673,6 +675,7 @@ async function getCommentsById(params) {
               }
               
               data.comments = list;
+              data.count = list.length; // 过滤/截断后同步总数，避免 App 显示错误的"共 N 条"
           }
           return data;
         }
