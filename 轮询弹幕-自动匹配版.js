@@ -1,6 +1,6 @@
 WidgetMetadata = {
   id: "danmu_api_Max_lunxun",
-  title: "轮询弹幕",
+  title: "轮询弹幕wg版",
   version: "9.9.9",
   requiredVersion: "0.0.2",
   site: "https://t.me/MakkaPakkaOvO",
